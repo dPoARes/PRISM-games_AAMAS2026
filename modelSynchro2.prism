@@ -1,0 +1,176 @@
+// Authors: F. Rajaona, H. Treharne, I. Boureanu, S. Radomirovic
+// Last modified: Sep 04, 2025
+
+
+// Overview: Model checking strategic properties of PoA (Power of Attorney) 
+
+// Model components: 
+// - 1 donor D
+// - 1 attorney A1
+// - 1 verifier V 
+// - 1 legal party L
+// - 1 unspecified object o of D 
+// - 2 actions act1 and act2 applicable on o
+// - the donor D loses its permissions after delegating 
+// - a delegation covers both actions act1 and act2 on object o
+
+
+// Modelling approach (Synchronised actions):
+// Each of the four phases of the protocol
+// is modelled as a single synchronised step
+// where each of the four party participate (sometimes by idling) 
+// This synchronised step abstracts a set of actions
+// that needs to occur sequentially. 
+
+// *** difference with modelSynchro: we removed the idles actions in the
+// transition functions, so that instead of being forced to idle,
+// the "non-participating" player can do anything, without influencing the transition
+
+csg
+
+player D 
+  D_register,
+  D_idle 
+endplayer
+
+player A1 
+  A_verify, 
+  A_register,
+  A_enact,
+  A_idle
+endplayer
+
+player V 
+  V_verify,
+  V_enact,
+  V_idle
+endplayer
+
+player L 
+  L_register,
+  L_verify,
+  L_idle
+endplayer
+
+const int max_phases = 2;
+const int max_stutter = 4;
+formula step_bound = max(D_steps,A_steps,L_steps,V_steps) <= max_phases;
+formula stutter_bound = max(D_idle,A_idle,L_idle,V_idle) <= max_stutter ;
+formula step_bound_x = max(D_steps,A_steps,L_steps,V_steps) < max_phases;
+formula stutter_bound_x = max(D_idle,A_idle,L_idle,V_idle) < max_stutter ;
+formula model_bound = stutter_bound & step_bound ;
+formula model_bound_x = stutter_bound_x & step_bound_x ;
+formula D_steps = D_reg_steps ;
+formula A_steps = max (A_reg_steps, A_ver_steps, A_act_steps) ;
+formula L_steps = max (L_reg_steps, L_ver_steps);
+formula V_steps = max (V_ver_steps, V_act_steps);
+formula executed_A = executed_act1_A | executed_act2_A;
+
+// D_actions: propose_deleg_D_to_A, revoke_A_by_D, idle_D
+// A_actions: consent_deleg_D_to_A, present_deleg_A_of_D, request_act1_A, request_act2_A, idle_A
+// L_actions: issue_deleg_D_to_A, publish_revoke_D_to_A, attest_A_att_of_D, idle_L
+// V_actions: query_A_att_of_D, update_after_revoke_D_to_A, accept_act1_A, reject_act1_A, execute_act1_A, accept_act2_A, reject_act2_A, execute_act2_A, idle_V
+
+
+module D_register 
+  D_reg_steps : [0..max_phases] init 0; 
+  [propose_deleg_D_to_A] (!issued_A_of_D) & (!revoked_A_by_D) & model_bound -> (D_reg_steps' = D_reg_steps + 1);
+  [revoke_A_by_D] (issued_A_of_D) & (!revoked_A_by_D) & model_bound -> (D_reg_steps' = D_reg_steps + 1);
+endmodule
+
+module A_register
+  A_reg_steps : [0..max_phases] init 0; 
+  [consent_deleg_D_to_A] (!issued_A_of_D) & (!revoked_A_by_D) & model_bound -> (A_reg_steps'=A_reg_steps+1) ;
+endmodule
+
+module L_register
+  L_reg_steps : [0..max_phases] init 0; 
+  [issue_deleg_D_to_A] (!issued_A_of_D) & model_bound -> (L_reg_steps'=L_reg_steps+1);
+  [publish_revoke_D_to_A] (issued_A_of_D) & (!revoked_A_by_D) & model_bound -> (L_reg_steps'=L_reg_steps+1);
+endmodule
+
+module registerPhase
+  issued_A_of_D : bool init false;
+  revoked_A_by_D : bool init false;
+  [propose_deleg_D_to_A,consent_deleg_D_to_A, issue_deleg_D_to_A] true -> (issued_A_of_D'=true)  ;
+  [revoke_A_by_D,publish_revoke_D_to_A, update_after_revoke_D_to_A] true -> (revoked_A_by_D'=true) ;
+endmodule
+
+module A_verify
+  A_ver_steps : [0..max_phases] init 0;
+  [present_deleg_A_of_D] (issued_A_of_D)&(!verified_A_of_D)& (!revoked_A_by_D)& model_bound ->  (A_ver_steps'=A_ver_steps+1);
+endmodule
+
+module V_verify
+  V_ver_steps : [0..max_phases] init 0;
+  [query_A_att_of_D] (issued_A_of_D)&(!verified_A_of_D)& (!revoked_A_by_D) & model_bound -> (V_ver_steps'=V_ver_steps+1);
+  [update_after_revoke_D_to_A] (issued_A_of_D) & (!revoked_A_by_D) & model_bound -> (V_ver_steps'=V_ver_steps+1);
+endmodule
+
+module L_verify
+  L_ver_steps : [0..max_phases] init 0;
+  [attest_A_att_of_D] (issued_A_of_D)&(!verified_A_of_D)& (!revoked_A_by_D) & model_bound -> (L_ver_steps'=L_ver_steps+1);
+endmodule
+
+
+module verifyPhase
+  verified_A_of_D : bool init false;
+  
+  act1_allowed_for_A_by_D : bool init false;
+  act2_allowed_for_A_by_D : bool init false;
+
+  [present_deleg_A_of_D, attest_A_att_of_D, query_A_att_of_D] true ->  (act1_allowed_for_A_by_D'=true) & (act2_allowed_for_A_by_D'=true) & (verified_A_of_D'=true); 
+
+  [revoke_A_by_D, publish_revoke_D_to_A, update_after_revoke_D_to_A] true -> (act1_allowed_for_A_by_D'=false) & (act2_allowed_for_A_by_D'=false);
+endmodule
+
+
+module V_enact
+  V_act_steps : [0..max_phases] init 0; 
+  [accept_act1_A ] model_bound & act1_allowed_for_A_by_D & !revoked_A_by_D -> (V_act_steps'=V_act_steps+1);
+  [reject_act1_A ] model_bound & (!act1_allowed_for_A_by_D) & !rejected_act1_A-> (V_act_steps'=V_act_steps+1);
+  [execute_act1_A] model_bound & executed_act1_A-> (V_act_steps'=V_act_steps+1);
+  [accept_act2_A ] model_bound & act2_allowed_for_A_by_D & !revoked_A_by_D -> (V_act_steps'=V_act_steps+1);
+  [reject_act2_A ] model_bound & (!act2_allowed_for_A_by_D) & !rejected_act2_A -> (V_act_steps'=V_act_steps+1);
+  [execute_act2_A] model_bound & executed_act2_A-> (V_act_steps'=V_act_steps+1);
+endmodule
+
+module A_enact
+  A_act_steps : [0..max_phases] init 0; 
+  [request_act1_A] model_bound -> (A_act_steps'=A_act_steps+1);
+  [request_act2_A] model_bound -> (A_act_steps'=A_act_steps+1);
+endmodule
+
+module enactPhase
+  enact_sync: bool init false;
+  executed_act1_A : bool init false;
+  executed_act2_A : bool init false;
+  rejected_act1_A : bool init false;
+  rejected_act2_A : bool init false;
+  [request_act1_A, accept_act1_A] true -> (executed_act1_A'=true); 
+  [request_act2_A, accept_act2_A] true -> (executed_act2_A'=true);
+  [execute_act1_A] true -> (executed_act1_A'=false); 
+  [execute_act2_A] true -> (executed_act2_A'=false);
+  [request_act1_A, reject_act1_A] true -> (rejected_act1_A'=true); 
+  [request_act2_A, reject_act2_A] true -> (rejected_act2_A'=true); 
+endmodule
+
+module D_idle
+  D_idle:[0..max_stutter] init 0;
+  [idle_D] model_bound -> (D_idle' = D_idle+1); 
+endmodule
+
+module A_idle
+  A_idle:[0..max_stutter] init 0;
+  [idle_A] model_bound -> (A_idle' = A_idle+1); 
+endmodule
+
+module L_idle
+  L_idle:[0..max_stutter] init 0;
+  [idle_L] model_bound -> (L_idle' = L_idle+1); 
+endmodule
+
+module V_idle
+  V_idle:[0..max_stutter] init 0;
+  [idle_V] model_bound -> (V_idle' = V_idle+1); 
+endmodule

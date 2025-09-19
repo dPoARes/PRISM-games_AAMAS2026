@@ -1,0 +1,91 @@
+// List of properties for modelSimple.prism
+// Authors: F. Rajaona, H. Treharne, I. Boureanu, S. Radomirovic
+// Last Modified: Fri Sep 19 01:00 a.m. 2025 BST
+// Overview: Model checking strategic properties of PoA (Power of Attorney) 
+
+// Property Name: Liveness to Enactment 1 (original) 
+// Description: If a contract is issued, allowed, and not revoked, then (under fair scheduling) 
+// the system can progress to execution:
+
+// FALSE: Liveness to Enactment 1 (original ) AG((issued ∧allowed ∧¬revoked)→AF executed)
+// in fact this should be TRUE if we
+// allow the model to be unbounded. Eventually the verifier will execute 
+// any requested action that is permitted.
+filter(forall, A [ F act1_executed_A ], act1_requested_A&act1_permit_for_A_by_D&!revoked_A_by_D)
+
+// TRUE: Liveness to Enactment 2 EG((issued ∧allowed ∧¬revoked)→EF executed)
+// Description: Note that we need to change the inner AF into EF from Liveness to Enactment 1
+filter(exists, E [ F act1_executed_A ], act1_requested_A&act1_permit_for_A_by_D&!revoked_A_by_D)
+
+// TRUE: Liveness to Enactment 3 (allowed capture the conditions above)
+// Description: changed AF into EF
+filter(exists, E [ F act1_executed_A ], act1_allow_cond)
+
+// FALSE: Liveness to Enactment 5
+// Description: for any execution, with inner EF
+filter(forall, E [ F act1_executed_A ], act_requested_A&act1_allow_cond)
+
+// FALSE: Liveness to Enactment 5
+// Description: for any execution + bound condition + inner EF
+filter(forall, E [ F act1_executed_A ], act_requested_A&act1_allow_cond&model_bound_x)
+
+// Property Name: Safety under Revocation: 
+// Description: After revocation, the action is never executed. 
+
+// FALSE: Safety under Revocation 1 (original) . 
+filter(forall, A [ G (!executed_A) ], revoked_A_by_D)
+
+// *** TRUE: Safety under Revocation 2  
+// Description: we needed to strengthen the antecedent, to make sure there is no execution happening simultaneously with the revocation
+filter(forall, A [ G (!executed_A) ], revoked_A_by_D&(!executed_A))
+
+
+// Property name: No "out of nothing execution"
+// Description: Execution can only happen if (i) the contract was issued and (ii) not revoked
+// at the decision point 
+
+// *** TRUE: No "out of nothing" execution 1
+A [ G executed_A=>verified_A_of_D ]
+
+// *** TRUE: No "out of nothing" execution 2
+A [ G act1_executed_A=>act1_permit_for_A_by_D ]
+
+// *** TRUE: No "out of nothing" execution 2
+A [ G act1_executed_A=>act1_permit_for_A_by_D ]
+
+// *** True: No "out of nothing" execution 2
+A [ G (act1_executed_A=>issued_A_att_of_D) ]
+
+// Property name: End-to-end correctness
+// Description: Issued and allowed implies that, unless revoked, there exists a strategy for the
+// coalition A \cup V to achieve execution:
+
+// TRUE: End to end correctness  1 (original + all players + bound conditions)
+filter(exists, <<D,A1,V,L>>P>0 [ X act1_executed_A ], act1_requested_A&act1_permit_for_A_by_D&!revoked_A_by_D&model_bound_x)
+
+// TRUE: End-to-end correctness 2 (modified the outer AG into EG) 
+filter(exists, <<A1,V>>P>0 [ F act1_executed_A ], act1_requested_A&act1_permit_for_A_by_D&!revoked_A_by_D)
+
+// FALSE: End to end correctness (original + bound conditions)
+filter(forall, <<A1,V>>P>0 [ F act1_executed_A ], !act1_executed_A&act1_requested_A&act1_permit_for_A_by_D&!revoked_A_by_D&model_bound_x)
+
+// TRUE: End to end correctness 
+// Description: original + bound conditions + all players in strategy
+filter(forall, <<D,A1,L,V>>P>0 [ F act1_executed_A ], act1_requested_A & act1_allow_cond & !act1_allow_cond & model_bound_x)
+
+// TRUE:  End to end correctness (not good because "to request" should be the strategy to achieve the executed goal) 
+// Description: original, but added act_requested as precondition
+filter (forall, <<A1,V>> P>0  [F act2_executed_A], act2_allow_cond &!revoked_A_by_D & act2_requested_A) 
+
+// TRUE ???:  End to end correctness 
+// Description: original, but added model size allowance condition 
+filter (forall, <<A1,V>> P>0  [F act2_executed_A], act2_allow_cond &!revoked_A_by_D & act2_requested_A &model_bound_x) 
+
+// ???:  End to end correctness 
+// Description: original, but added model size allowance condition 
+filter (forall, <<D,A1,L,V>> P>0  [F act2_requested_A], act2_allow_cond &!revoked_A_by_D &model_bound_x) 
+
+// *** FALSE:  End to end correctness
+// Description: the property fails when V is not part of the strategic opertor
+filter (forall, <<A1>> P>0  [F act2_executed_A], act2_allow_cond &!revoked_A_by_D & act2_requested_A) 
+
